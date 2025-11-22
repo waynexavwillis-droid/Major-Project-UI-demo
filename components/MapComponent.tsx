@@ -35,9 +35,13 @@ export const MapComponent: React.FC<MapProps> = ({
     zonesRef.current.addTo(map);
     mapInstance.current = map;
 
+    // Cleanup function to destroy map on unmount
     return () => {
       map.remove();
       mapInstance.current = null;
+      tileLayerRef.current = null;
+      markersRef.current.clear();
+      zonesRef.current.clearLayers();
     };
   }, []);
 
@@ -45,19 +49,23 @@ export const MapComponent: React.FC<MapProps> = ({
   useEffect(() => {
     if (!mapInstance.current) return;
     
+    // Completely remove the old layer to prevent "disappearing map" bug
+    if (tileLayerRef.current) {
+        tileLayerRef.current.remove();
+        tileLayerRef.current = null;
+    }
+
     const darkTiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-    const lightTiles = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    const lightTiles = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
     
     const url = theme === 'dark' ? darkTiles : lightTiles;
 
-    if (tileLayerRef.current) {
-        tileLayerRef.current.setUrl(url);
-    } else {
-        tileLayerRef.current = L.tileLayer(url, {
-            maxZoom: 20,
-            subdomains: 'abcd',
-        }).addTo(mapInstance.current);
-    }
+    tileLayerRef.current = L.tileLayer(url, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 20,
+        subdomains: 'abcd',
+    }).addTo(mapInstance.current);
+    
   }, [theme]);
 
   // Handle Data Updates & Focus Logic
@@ -65,12 +73,17 @@ export const MapComponent: React.FC<MapProps> = ({
     if (!mapInstance.current) return;
     const map = mapInstance.current;
 
+    // Define Theme Colors
+    // Lime-400 (#a3e635) for Dark Mode
+    // Lime-600 (#65a30d) for Light Mode
+    const accentColor = theme === 'dark' ? '#a3e635' : '#65a30d';
+
     // 1. Draw Zones (Faint Outlines)
     zonesRef.current.clearLayers();
     zones.forEach(zone => {
       L.circle([zone.center.lat, zone.center.lng], {
-        color: theme === 'dark' ? '#fbbf24' : '#d97706', // Yellow
-        fillColor: '#fbbf24',
+        color: accentColor, 
+        fillColor: accentColor,
         fillOpacity: theme === 'dark' ? 0.05 : 0.1,
         weight: 1,
         radius: zone.radius,
@@ -111,7 +124,7 @@ export const MapComponent: React.FC<MapProps> = ({
       const getStatusColor = (s: TrolleyStatus) => {
           if (s === TrolleyStatus.MAINTENANCE) return '#f43f5e'; // Rose
           if (s === TrolleyStatus.LOW_BATTERY) return '#f59e0b'; // Amber
-          return '#10b981'; // Emerald
+          return accentColor; // Lime for Active
       };
       
       const statusColorHex = getStatusColor(t.status);
@@ -171,7 +184,7 @@ export const MapComponent: React.FC<MapProps> = ({
             <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${textSub};">
                     <span>ZONE</span>
-                    <span style="color: ${theme === 'dark' ? '#fbbf24' : '#d97706'}; font-weight: 600;">${zoneName}</span>
+                    <span style="color: ${accentColor}; font-weight: 600;">${zoneName}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${textSub};">
                     <span>SIGNAL</span>
@@ -179,7 +192,7 @@ export const MapComponent: React.FC<MapProps> = ({
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${textSub};">
                     <span>BATTERY</span>
-                    <span style="color: ${t.batteryLevel < 20 ? '#f43f5e' : '#10b981'};">${t.batteryLevel}%</span>
+                    <span style="color: ${t.batteryLevel < 20 ? '#f43f5e' : accentColor};">${t.batteryLevel}%</span>
                 </div>
                 <div style="height: 1px; background: ${border}; margin: 4px 0;"></div>
                 <div style="font-size: 9px; color: ${textSub}; text-align: center;">

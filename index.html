@@ -31,7 +31,6 @@
     <style>
         /* --- INDUSTRIAL THEME OVERRIDES --- */
         body {
-            /* Background is handled by Tailwind classes in App.tsx now */
             overscroll-behavior: none;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
@@ -44,14 +43,6 @@
             background-size: 40px 40px;
         }
 
-        /* Leaflet Dark Mode Filter - Only applies when .dark is present on map container */
-        .dark .leaflet-layer,
-        .dark .leaflet-control-zoom-in,
-        .dark .leaflet-control-zoom-out,
-        .dark .leaflet-control-attribution {
-            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
-        }
-        
         /* Custom Industrial Tooltip Reset */
         .leaflet-industrial-tooltip {
             background: transparent !important;

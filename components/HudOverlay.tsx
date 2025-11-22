@@ -31,7 +31,7 @@ export const HudOverlay: React.FC<HudProps> = ({ target, onClose }) => {
       {/* Top HUD Bar */}
       <div className="relative z-10 pt-safe p-4 flex justify-between items-start bg-gradient-to-b from-zinc-900/90 to-transparent backdrop-blur-md">
         <div>
-          <div className="flex items-center gap-2 text-emerald-500 mb-1 animate-pulse">
+          <div className="flex items-center gap-2 text-lime-400 mb-1 animate-pulse">
             <Radar className="w-4 h-4" />
             <span className="text-xs font-bold tracking-widest uppercase">Signal Locked</span>
           </div>
@@ -46,26 +46,26 @@ export const HudOverlay: React.FC<HudProps> = ({ target, onClose }) => {
       {/* Central AR View */}
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
         {/* Radar Elements */}
-        <div className="absolute border border-emerald-500/20 rounded-full w-[28rem] h-[28rem] animate-pulse-ring" />
+        <div className="absolute border border-lime-500/20 rounded-full w-[28rem] h-[28rem] animate-pulse-ring" />
         <div className="absolute border border-zinc-800 rounded-full w-64 h-64" />
         <div className="absolute border border-zinc-800 rounded-full w-96 h-96" />
         <div className="absolute border-l border-r border-zinc-800/50 h-full w-px" />
         <div className="absolute border-t border-b border-zinc-800/50 w-full h-px" />
         
         {/* Scanner Sweep */}
-        <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/10 to-transparent h-1/2 w-full animate-radar origin-bottom-right opacity-50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-lime-500/10 to-transparent h-1/2 w-full animate-radar origin-bottom-right opacity-50" />
 
         {/* Directional Arrow */}
         <div className="relative z-10 flex flex-col items-center group cursor-pointer transition-transform hover:scale-105">
           <div className="relative">
-             <ArrowUp className="w-32 h-32 text-emerald-500 filter drop-shadow-[0_0_15px_rgba(16,185,129,0.6)]" />
-             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-12 w-1 h-12 bg-gradient-to-t from-emerald-500 to-transparent opacity-50"></div>
+             <ArrowUp className="w-32 h-32 text-lime-400 filter drop-shadow-[0_0_15px_rgba(163,230,53,0.6)]" />
+             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-12 w-1 h-12 bg-gradient-to-t from-lime-400 to-transparent opacity-50"></div>
           </div>
           <div className="mt-6 flex items-end gap-2">
              <span className="text-6xl font-bold tracking-tighter text-white tabular-nums leading-none">{Math.round(distance)}</span>
              <span className="text-xl text-zinc-500 font-bold mb-2">M</span>
           </div>
-          <div className="text-xs text-emerald-500/70 uppercase tracking-[0.2em] mt-2">Distance to Target</div>
+          <div className="text-xs text-lime-500/70 uppercase tracking-[0.2em] mt-2">Distance to Target</div>
         </div>
       </div>
 
@@ -80,11 +80,11 @@ export const HudOverlay: React.FC<HudProps> = ({ target, onClose }) => {
             <div className="h-2 bg-zinc-800 rounded-full overflow-hidden mb-2 relative">
               <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/10"></div>
               <div 
-                className="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                className="h-full bg-lime-500 transition-all duration-500 shadow-[0_0_10px_rgba(163,230,53,0.5)]"
                 style={{ width: `${signalPercent}%` }} 
               />
             </div>
-            <div className="text-right text-xs text-emerald-400">{Math.round(rssi)} dBm</div>
+            <div className="text-right text-xs text-lime-400">{Math.round(rssi)} dBm</div>
           </div>
 
           <div className="bg-black/50 p-4 rounded-xl border border-white/5 backdrop-blur-sm">
@@ -96,7 +96,7 @@ export const HudOverlay: React.FC<HudProps> = ({ target, onClose }) => {
                <div className="text-2xl font-bold text-white">
                  {target.batteryLevel}%
                </div>
-               <div className={`text-[10px] px-2 py-0.5 rounded border ${target.batteryLevel > 20 ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'}`}>
+               <div className={`text-[10px] px-2 py-0.5 rounded border ${target.batteryLevel > 20 ? 'border-lime-500/30 text-lime-400' : 'border-rose-500/30 text-rose-400'}`}>
                  {target.batteryLevel > 20 ? 'OPTIMAL' : 'CRITICAL'}
                </div>
             </div>
