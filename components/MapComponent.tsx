@@ -8,6 +8,8 @@ interface MapProps {
   selectedTrolleyId: string | null;
   onTrolleySelect: (id: string) => void;
   theme: 'light' | 'dark';
+  placementMode: 'BEACON' | 'ZONE' | null;
+  onMapClick: (lat: number, lng: number) => void;
 }
 
 export const MapComponent: React.FC<MapProps> = ({ 
@@ -15,13 +17,16 @@ export const MapComponent: React.FC<MapProps> = ({
   zones, 
   selectedTrolleyId, 
   onTrolleySelect,
-  theme
+  theme,
+  placementMode,
+  onMapClick
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
   const zonesRef = useRef<L.LayerGroup>(L.layerGroup());
+  const mapClickRef = useRef<((e: L.LeafletMouseEvent) => void) | null>(null);
 
   // Initialize Map
   useEffect(() => {
@@ -45,11 +50,42 @@ export const MapComponent: React.FC<MapProps> = ({
     };
   }, []);
 
+  // Handle Map Click Events (Bound to current props)
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    const map = mapInstance.current;
+
+    // Remove old listener if exists
+    if (mapClickRef.current) {
+        map.off('click', mapClickRef.current);
+    }
+
+    // Create new listener
+    mapClickRef.current = (e: L.LeafletMouseEvent) => {
+        // Only trigger onMapClick if we are in placement mode
+        if (placementMode) {
+            onMapClick(e.latlng.lat, e.latlng.lng);
+        } else {
+            // If clicking empty space (not a marker), we might want to deselect
+            // But MapComponent doesn't handle deselect directly, usually App handles it via onTrolleySelect(null) logic
+        }
+    };
+
+    map.on('click', mapClickRef.current);
+
+    // Cursor Styling
+    if (placementMode) {
+        L.DomUtil.addClass(map.getContainer(), 'leaflet-crosshair');
+    } else {
+        L.DomUtil.removeClass(map.getContainer(), 'leaflet-crosshair');
+    }
+
+  }, [placementMode, onMapClick]);
+
   // Handle Theme Changes (Tile Layer)
   useEffect(() => {
     if (!mapInstance.current) return;
     
-    // Completely remove the old layer to prevent "disappearing map" bug
     if (tileLayerRef.current) {
         tileLayerRef.current.remove();
         tileLayerRef.current = null;
@@ -57,7 +93,6 @@ export const MapComponent: React.FC<MapProps> = ({
 
     const darkTiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
     const lightTiles = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-    
     const url = theme === 'dark' ? darkTiles : lightTiles;
 
     tileLayerRef.current = L.tileLayer(url, {
@@ -72,13 +107,9 @@ export const MapComponent: React.FC<MapProps> = ({
   useEffect(() => {
     if (!mapInstance.current) return;
     const map = mapInstance.current;
-
-    // Define Theme Colors
-    // Lime-400 (#a3e635) for Dark Mode
-    // Lime-600 (#65a30d) for Light Mode
     const accentColor = theme === 'dark' ? '#a3e635' : '#65a30d';
 
-    // 1. Draw Zones (Faint Outlines)
+    // 1. Draw Zones
     zonesRef.current.clearLayers();
     zones.forEach(zone => {
       L.circle([zone.center.lat, zone.center.lng], {
@@ -87,55 +118,55 @@ export const MapComponent: React.FC<MapProps> = ({
         fillOpacity: theme === 'dark' ? 0.05 : 0.1,
         weight: 1,
         radius: zone.radius,
-        dashArray: '4, 6'
+        dashArray: '4, 6',
+        interactive: false // FIX: Allow events to pass through to markers
       }).addTo(zonesRef.current);
     });
 
-    // 2. Draw/Update Markers with Spotlight Logic
+    // 2. Draw/Update Markers
     trolleys.forEach(t => {
       let marker = markersRef.current.get(t.id);
       const isSelected = t.id === selectedTrolleyId;
       const isAnySelected = selectedTrolleyId !== null;
 
-      // Determine Visual State
       let opacity = 1;
       let fillOpacity = 0.9;
-      let radius = 5;
+      let radius = 6;
       let weight = 1;
       let color = theme === 'dark' ? '#000' : '#fff';
       
       if (isAnySelected) {
         if (isSelected) {
-            // Spotlight: Selected
             opacity = 1;
             fillOpacity = 1;
             radius = 12;
             weight = 3;
-            color = theme === 'dark' ? '#fff' : '#000'; // Halo
+            color = theme === 'dark' ? '#fff' : '#000';
         } else {
-            // Spotlight: Background (Dimmed)
-            opacity = 0.2;
-            fillOpacity = 0.2;
-            radius = 3;
-            weight = 0;
+            opacity = 0.4;
+            fillOpacity = 0.4;
+            radius = 6;
+            weight = 1;
         }
       }
 
       const getStatusColor = (s: TrolleyStatus) => {
-          if (s === TrolleyStatus.MAINTENANCE) return '#f43f5e'; // Rose
-          if (s === TrolleyStatus.LOW_BATTERY) return '#f59e0b'; // Amber
-          return accentColor; // Lime for Active
+          if (s === TrolleyStatus.MAINTENANCE) return '#f43f5e';
+          if (s === TrolleyStatus.LOW_BATTERY) return '#f59e0b';
+          return accentColor;
       };
       
       const statusColorHex = getStatusColor(t.status);
 
       if (!marker) {
         marker = L.circleMarker([t.location.lat, t.location.lng]).addTo(map);
-        marker.on('click', () => onTrolleySelect(t.id));
+        marker.on('click', (e) => {
+             L.DomEvent.stopPropagation(e); // Stop map click from firing
+             onTrolleySelect(t.id);
+        });
         markersRef.current.set(t.id, marker);
       }
 
-      // Apply Styles
       marker.setLatLng([t.location.lat, t.location.lng]);
       marker.setStyle({
         radius,
@@ -148,10 +179,8 @@ export const MapComponent: React.FC<MapProps> = ({
 
       if (isSelected) marker.bringToFront();
 
-      // Detailed Industrial Tooltip Content
+      // Tooltip construction
       const zoneName = zones.find(z => z.id === t.zoneId)?.name || 'UNASSIGNED';
-      
-      // Styles for tooltip based on theme
       const bg = theme === 'dark' ? 'rgba(9, 9, 11, 0.95)' : 'rgba(255, 255, 255, 0.95)';
       const border = theme === 'dark' ? '#3f3f46' : '#e4e4e7';
       const textMain = theme === 'dark' ? '#fff' : '#18181b';
@@ -194,35 +223,46 @@ export const MapComponent: React.FC<MapProps> = ({
                     <span>BATTERY</span>
                     <span style="color: ${t.batteryLevel < 20 ? '#f43f5e' : accentColor};">${t.batteryLevel}%</span>
                 </div>
-                <div style="height: 1px; background: ${border}; margin: 4px 0;"></div>
-                <div style="font-size: 9px; color: ${textSub}; text-align: center;">
-                    ${t.location.lat.toFixed(5)}, ${t.location.lng.toFixed(5)}
-                </div>
             </div>
         </div>
       `;
       
-      marker.unbindTooltip();
-      marker.bindTooltip(tooltipContent, {
-          direction: 'top',
-          offset: [0, -15],
-          opacity: 1,
-          className: 'leaflet-industrial-tooltip' 
-      });
+      const existingTooltip = marker.getTooltip();
+      if (existingTooltip) {
+          marker.setTooltipContent(tooltipContent);
+      } else {
+          marker.bindTooltip(tooltipContent, {
+              direction: 'top',
+              offset: [0, -15],
+              opacity: 1,
+              className: 'leaflet-industrial-tooltip' 
+          });
+      }
     });
 
-    // Fly to selection
+    // Cleanup removed markers
+    markersRef.current.forEach((marker, id) => {
+        if (!trolleys.find(t => t.id === id)) {
+            marker.remove();
+            markersRef.current.delete(id);
+        }
+    });
+
     if (selectedTrolleyId) {
       const t = trolleys.find(x => x.id === selectedTrolleyId);
       if (t) {
-        map.flyTo([t.location.lat, t.location.lng], 18, {
-          animate: true,
-          duration: 0.8
-        });
+        map.flyTo([t.location.lat, t.location.lng], 18, { animate: true, duration: 0.8 });
       }
     }
 
   }, [trolleys, zones, selectedTrolleyId, onTrolleySelect, theme]);
 
-  return <div ref={mapContainer} className={`w-full h-full transition-colors duration-500 ${theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'}`} />;
+  return (
+    <>
+        <style>{`
+            .leaflet-crosshair { cursor: crosshair !important; }
+        `}</style>
+        <div ref={mapContainer} className={`w-full h-full transition-colors duration-500 ${theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'}`} />
+    </>
+  );
 };

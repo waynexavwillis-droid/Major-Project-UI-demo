@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle } from 'lucide-react';
 
-import { MOCK_TROLLEYS, ZONES, APP_NAME } from './constants';
-import { Trolley, TabView, TrolleyStatus } from './types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin } from 'lucide-react';
+
+import { APP_NAME } from './constants';
+import { Trolley, TabView, TrolleyStatus, Zone, ZoneType } from './types';
 import { Button } from './components/Button';
-import { StatusBadge } from './components/StatusBadge';
 import { MapComponent } from './components/MapComponent';
 import { HudOverlay } from './components/HudOverlay';
+import { db } from './firebase';
 
 // --- Components for Modals ---
 const ModalBackdrop = ({ children, onClose }: { children?: React.ReactNode; onClose: () => void }) => (
@@ -21,33 +22,116 @@ const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState<TabView>('DASHBOARD');
   const [selectedTrolleyId, setSelectedTrolleyId] = useState<string | null>(null);
-  const [trolleys, setTrolleys] = useState<Trolley[]>(MOCK_TROLLEYS);
+  const [trolleys, setTrolleys] = useState<Trolley[]>([]);
+  // Initialize as empty to rely solely on Firebase data
+  const [zones, setZones] = useState<Zone[]>([]);
   const [hudTarget, setHudTarget] = useState<Trolley | null>(null);
   
   // Dashboard Filters
   const [dashboardZoneFilter, setDashboardZoneFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<TrolleyStatus | 'ALL'>('ALL');
   
-  // Add Beacon Modal State
+  // Add Beacon Logic
   const [showAddModal, setShowAddModal] = useState(false);
   const [newBeaconId, setNewBeaconId] = useState<string>('');
   const [newBeaconZone, setNewBeaconZone] = useState<string>('ZONE-A');
+  
+  // Add Zone Logic
+  const [showZoneModal, setShowZoneModal] = useState(false);
+  const [newZoneId, setNewZoneId] = useState<string>('');
+  const [newZoneName, setNewZoneName] = useState<string>('');
 
-  // --- Derived State ---
-  const dashboardList = useMemo(() => {
-    return trolleys.filter(t => {
-      // 1. Filter by Zone
-      const matchZone = dashboardZoneFilter === 'ALL' || t.zoneId === dashboardZoneFilter;
-      // 2. Filter by Search (ID or Name)
-      const query = searchQuery.toLowerCase();
-      const matchSearch = t.id.toLowerCase().includes(query) || t.name.toLowerCase().includes(query);
-      // 3. Filter by Status
-      const matchStatus = statusFilter === 'ALL' || t.status === statusFilter;
+  // Placement State
+  const [placementMode, setPlacementMode] = useState<'BEACON' | 'ZONE' | null>(null);
+  const [pendingBeaconData, setPendingBeaconData] = useState<{id: string, zoneId: string} | null>(null);
+  const [pendingZoneData, setPendingZoneData] = useState<{id: string, name: string} | null>(null);
 
-      return matchZone && matchSearch && matchStatus;
-    });
-  }, [trolleys, dashboardZoneFilter, searchQuery, statusFilter]);
+  // --- Firebase Listeners ---
+  useEffect(() => {
+    if (!db) {
+        console.error("Firebase not initialized");
+        return;
+    }
+
+    const trackingRef = db.ref('/Tracking');
+    const zonesRef = db.ref('/Zones');
+
+    // Listener for Trolleys
+    const handleTrackingUpdate = (snapshot: any) => {
+        const data = snapshot.val();
+        if (!data) {
+            setTrolleys([]);
+            return;
+        }
+
+        const loadedTrolleys: Trolley[] = Object.keys(data).map(key => {
+            const raw = data[key];
+            const lastSeenDate = raw.timestamp ? new Date(raw.timestamp) : new Date();
+            const isRecent = (Date.now() - lastSeenDate.getTime()) < 1000 * 60 * 60;
+            
+            let status = TrolleyStatus.ACTIVE;
+            if (!isRecent) {
+                status = TrolleyStatus.LOST;
+            } else if (raw.battery && raw.battery < 20) {
+                status = TrolleyStatus.LOW_BATTERY;
+            }
+
+            return {
+                id: key,
+                name: `Unit ${key}`,
+                status: status,
+                batteryLevel: raw.battery || 100,
+                lastSeen: raw.timestamp || new Date().toISOString(),
+                location: {
+                    lat: parseFloat(raw.latitude || raw.lat || 0),
+                    lng: parseFloat(raw.longitude || raw.lng || 0)
+                },
+                zoneId: raw.zoneId || null,
+                signalStrength: raw.rssi || -60,
+                firmware: 'v2.5.0'
+            };
+        });
+
+        setTrolleys(loadedTrolleys);
+    };
+
+    // Listener for Zones
+    const handleZonesUpdate = (snapshot: any) => {
+        const data = snapshot.val();
+        if (!data) {
+            setZones([]); // Clear zones if data is empty
+            return;
+        }
+
+        const newZonesList: Zone[] = [];
+        Object.keys(data).forEach(key => {
+            const raw = data[key];
+            const center = {
+                lat: parseFloat(raw.centerLat || 0),
+                lng: parseFloat(raw.centerLng || 0)
+            };
+            newZonesList.push({
+                id: key,
+                name: raw.name || `Zone ${key}`,
+                type: ZoneType.PARKING,
+                center,
+                radius: 40,
+                capacity: 50,
+                currentCount: 0
+            });
+        });
+        
+        setZones(newZonesList);
+    };
+
+    trackingRef.on('value', handleTrackingUpdate);
+    zonesRef.on('value', handleZonesUpdate);
+
+    return () => {
+        trackingRef.off('value', handleTrackingUpdate);
+        zonesRef.off('value', handleZonesUpdate);
+    };
+  }, []);
 
   // --- Actions ---
   const handleLocate = (t: Trolley) => {
@@ -55,50 +139,110 @@ const App: React.FC = () => {
     setSelectedTrolleyId(t.id);
   };
 
-  const handleAddBeacon = () => {
+  const handleStartBeaconPlacement = () => {
+    // 1. Prepare Data
     const autoId = `TR-${Math.floor(Math.random() * 9000) + 1000}`;
     const finalId = newBeaconId.trim() || autoId;
     
-    const zone = ZONES.find(z => z.id === newBeaconZone);
-    const targetZone = zone || ZONES[0];
-    const center = targetZone.center;
-    
-    const jitterLat = (Math.random() - 0.5) * 0.0005;
-    const jitterLng = (Math.random() - 0.5) * 0.0005;
+    // 2. Set Pending State
+    setPendingBeaconData({ id: finalId, zoneId: newBeaconZone });
+    setPlacementMode('BEACON');
 
-    const newTrolley: Trolley = {
-      id: finalId,
-      name: `Unit ${finalId}`,
-      status: TrolleyStatus.ACTIVE,
-      batteryLevel: 100,
-      lastSeen: new Date().toISOString(),
-      location: {
-        lat: center.lat + jitterLat,
-        lng: center.lng + jitterLng
-      },
-      zoneId: targetZone.id,
-      signalStrength: -45,
-      firmware: 'v2.5.0'
-    };
-
-    setTrolleys(prev => [newTrolley, ...prev]);
+    // 3. Close Modal & Switch to Map
     setShowAddModal(false);
-    setNewBeaconId(''); 
-    setNewBeaconZone('ZONE-A');
-    alert(`Beacon ${finalId} activated in ${targetZone.name}`);
+    setActiveTab('MAP');
+    setNewBeaconId('');
+  };
+
+  const handleStartZonePlacement = () => {
+      if (!newZoneName.trim()) {
+          alert("Please enter a zone name");
+          return;
+      }
+      // Generate ID if not provided, else use provided ID
+      const autoId = `Z-${Math.floor(Date.now() / 1000).toString(16).toUpperCase()}`;
+      const finalId = newZoneId.trim() || autoId;
+
+      setPendingZoneData({ id: finalId, name: newZoneName });
+      setPlacementMode('ZONE');
+      setShowZoneModal(false);
+      setActiveTab('MAP');
+      setNewZoneName('');
+      setNewZoneId('');
+  };
+
+  const handleMapClick = (lat: number, lng: number) => {
+    if (!db) return;
+
+    if (placementMode === 'BEACON' && pendingBeaconData) {
+        // Write Beacon to Firebase
+        db.ref(`/Tracking/${pendingBeaconData.id}`).set({
+            zoneId: pendingBeaconData.zoneId,
+            latitude: lat,
+            longitude: lng,
+            rssi: -(Math.floor(Math.random() * 40) + 40),
+            battery: 100,
+            timestamp: new Date().toISOString()
+        }).then(() => {
+            console.log("Beacon placed successfully");
+        }).catch(err => {
+            console.error("Firebase Write Error: ", err);
+            alert("Failed to write to database. Check console/permissions.");
+        });
+
+        setPlacementMode(null);
+        setPendingBeaconData(null);
+
+    } else if (placementMode === 'ZONE' && pendingZoneData) {
+        // Write Zone to Firebase
+        // Using strict .child() to handle custom IDs with spaces/special chars
+        db.ref('/Zones').child(pendingZoneData.id).set({
+            name: pendingZoneData.name,
+            centerLat: lat,
+            centerLng: lng
+        }).then(() => {
+            console.log("Zone created successfully");
+        }).catch(err => {
+            console.error("Firebase Write Error: ", err);
+            alert("Failed to create zone.");
+        });
+
+        setPlacementMode(null);
+        setPendingZoneData(null);
+    }
+  };
+
+  const handleDeleteBeacon = (id: string) => {
+      if (!db || !window.confirm(`Delete beacon ${id}?`)) return;
+      db.ref(`/Tracking/${id}`).remove();
+      if (selectedTrolleyId === id) setSelectedTrolleyId(null);
   };
 
   const handleCloseModal = () => {
       setShowAddModal(false);
+      setShowZoneModal(false);
       setNewBeaconId('');
+      setNewZoneName('');
+      setNewZoneId('');
   };
 
-  // --- Renders ---
+  // --- Derived State for Dashboard ---
+  const dashboardList = useMemo(() => {
+    return trolleys.filter(t => {
+      const matchZone = dashboardZoneFilter === 'ALL' || t.zoneId === dashboardZoneFilter;
+      const query = searchQuery.toLowerCase();
+      const matchSearch = t.id.toLowerCase().includes(query) || t.name.toLowerCase().includes(query);
+      return matchZone && matchSearch;
+    });
+  }, [trolleys, dashboardZoneFilter, searchQuery]);
+
+
+  // --- Render Functions ---
 
   const renderDashboard = () => (
     <div className="relative h-full p-4 pb-36 animate-fade-in flex flex-col gap-6">
       {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-3 relative z-10 shrink-0">
+      <div className="grid grid-cols-2 gap-3 relative z-10 shrink-0">
         <div className="bg-white dark:bg-zinc-900/80 p-4 rounded-[30px] border border-zinc-100 dark:border-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-lg flex flex-col justify-between group hover:-translate-y-1 transition-transform duration-300">
           <div className="absolute top-3 right-3 opacity-20 group-hover:opacity-50 transition-opacity text-black dark:text-white"><Box className="w-4 h-4" /></div>
           <div className="text-zinc-400 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-2">Total Beacon</div>
@@ -111,18 +255,10 @@ const App: React.FC = () => {
             {trolleys.filter(t => t.status === TrolleyStatus.ACTIVE).length}
           </div>
         </div>
-        <div className="bg-white dark:bg-zinc-900/80 p-4 rounded-[30px] border border-zinc-100 dark:border-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-lg flex flex-col justify-between group hover:-translate-y-1 transition-transform duration-300">
-          <div className="absolute top-3 right-3 text-rose-500 opacity-20 group-hover:opacity-50 transition-opacity"><AlertTriangle className="w-4 h-4" /></div>
-          <div className="text-zinc-400 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-2">Issues</div>
-          <div className="text-3xl font-bold text-rose-600 dark:text-rose-400 font-mono tracking-tighter">
-            {trolleys.filter(t => t.status === TrolleyStatus.MAINTENANCE).length}
-          </div>
-        </div>
       </div>
 
-      {/* Search & Filters Section */}
+      {/* Search & Filters */}
       <div className="flex flex-col gap-4 shrink-0 relative z-10">
-        {/* Search Bar */}
         <div className="relative">
             <Search className="absolute left-4 top-3.5 w-4 h-4 text-zinc-400" />
             <input 
@@ -138,33 +274,9 @@ const App: React.FC = () => {
                 </button>
             )}
         </div>
-
-        {/* Status Filter Chips */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {[
-                { label: 'All Units', value: 'ALL' },
-                { label: 'Active', value: TrolleyStatus.ACTIVE },
-                { label: 'Maintenance', value: TrolleyStatus.MAINTENANCE },
-                { label: 'Low Battery', value: TrolleyStatus.LOW_BATTERY },
-                { label: 'Idle', value: TrolleyStatus.IDLE }
-            ].map((chip) => (
-                <button
-                    key={chip.value}
-                    onClick={() => setStatusFilter(chip.value as TrolleyStatus | 'ALL')}
-                    className={`
-                        whitespace-nowrap px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all
-                        ${statusFilter === chip.value 
-                            ? 'bg-lime-500 text-black border-lime-400 shadow-[0_0_15px_rgba(132,204,22,0.4)]' 
-                            : 'bg-white dark:bg-zinc-900/50 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'}
-                    `}
-                >
-                    {chip.label}
-                </button>
-            ))}
-        </div>
       </div>
 
-      {/* Zone Filter Dropdown Section (Retained for specific zone filtering) */}
+      {/* List */}
       <div className="flex-1 flex flex-col min-h-0 relative z-10">
         <div className="flex items-center justify-between px-1 mb-4 shrink-0">
           <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-100 uppercase tracking-widest flex items-center gap-2">
@@ -178,26 +290,23 @@ const App: React.FC = () => {
               onChange={(e) => setDashboardZoneFilter(e.target.value)}
              >
                <option value="ALL" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">All Zones</option>
-               {ZONES.map(z => (
-                 <option key={z.id} value={z.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">{z.name}</option>
-               ))}
+               {zones.map(z => <option key={z.id} value={z.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">{z.name}</option>)}
              </select>
              <ChevronRight className="w-3 h-3 text-zinc-500 absolute right-3 top-3.5 pointer-events-none rotate-90 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors" />
           </div>
         </div>
 
-        {/* Scrollable List Panel */}
         <div className="flex-1 bg-white dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-[30px] overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-xl flex flex-col">
-            {/* Fixed Header inside Panel */}
             <div className="bg-white dark:bg-zinc-900/80 px-5 py-4 border-b border-zinc-100 dark:border-zinc-800/50 flex justify-between items-center shrink-0">
                 <span className="text-xs font-mono text-lime-600 dark:text-lime-400 font-bold flex items-center gap-2">
                   <CheckCircle2 className="w-3 h-3" />
                   {dashboardList.length} UNITS FOUND
                 </span>
-                <span className="text-[9px] text-zinc-500 font-mono border border-zinc-100 dark:border-zinc-800 px-2 py-0.5 rounded bg-zinc-50 dark:bg-black/20">LIVE FEED</span>
+                <div className="flex items-center gap-2">
+                     <span className="text-[9px] text-zinc-500 font-mono border border-zinc-100 dark:border-zinc-800 px-2 py-0.5 rounded bg-zinc-50 dark:bg-black/20 animate-pulse">LIVE DB</span>
+                </div>
             </div>
             
-            {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto no-scrollbar">
                 <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
                     {dashboardList.length === 0 ? (
@@ -216,7 +325,6 @@ const App: React.FC = () => {
                             </div>
                             </div>
                             <div className="flex items-center gap-3">
-                            <StatusBadge status={t.status} />
                             <div className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500 group-hover:bg-lime-500 group-hover:text-black transition-all">
                                 <ChevronRight className="w-4 h-4" />
                             </div>
@@ -239,10 +347,10 @@ const App: React.FC = () => {
                 <Settings className="w-8 h-8 text-zinc-400 dark:text-zinc-500" />
             </div>
             <h3 className="text-zinc-900 dark:text-white font-bold text-xl">System Configuration</h3>
-            <p className="text-zinc-400 dark:text-zinc-500 text-xs font-mono mt-1">v2.4.1-stable</p>
+            <p className="text-zinc-400 dark:text-zinc-500 text-xs font-mono mt-1">Firebase Connected</p>
         </div>
 
-        {/* Theme Toggle */}
+        {/* Theme Card */}
         <div className="bg-white dark:bg-zinc-900/80 backdrop-blur p-4 rounded-[30px] border border-zinc-100 dark:border-zinc-800 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
@@ -263,27 +371,44 @@ const App: React.FC = () => {
             </button>
         </div>
 
-        {/* Read Only Info */}
-        <div className="bg-white dark:bg-zinc-900/80 backdrop-blur p-4 rounded-[30px] border border-zinc-100 dark:border-zinc-800 space-y-4 opacity-70 pointer-events-none grayscale shadow-sm">
-             <div className="flex items-center justify-between">
-                 <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">API ENDPOINT</span>
-                 <span className="text-xs font-bold text-zinc-900 dark:text-zinc-300">api.trolleyops.io</span>
-             </div>
-             <div className="flex items-center justify-between">
-                 <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">DATA REFRESH</span>
-                 <span className="text-xs font-bold text-zinc-900 dark:text-zinc-300">30s (Real-time)</span>
-             </div>
-             <div className="flex items-center justify-between">
-                 <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">USER ROLE</span>
-                 <span className="text-xs font-bold text-zinc-900 dark:text-zinc-300">OPERATOR</span>
-             </div>
+        {/* Zone Management Card */}
+        <div className="bg-white dark:bg-zinc-900/80 backdrop-blur rounded-[30px] border border-zinc-100 dark:border-zinc-800 overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                 <div className="flex items-center gap-3">
+                    <MapPin className="w-5 h-5 text-zinc-400" />
+                    <span className="text-sm font-bold text-zinc-900 dark:text-white">Zone Management</span>
+                 </div>
+                 <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-lime-500 hover:text-black" onClick={() => setShowZoneModal(true)}>
+                    <Plus className="w-4 h-4" />
+                 </Button>
+            </div>
+            <div className="max-h-60 overflow-y-auto no-scrollbar">
+                {zones.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-zinc-400">No zones configured.</div>
+                ) : (
+                    zones.map(z => (
+                        <div key={z.id} className="px-5 py-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-white/5 group border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 relative">
+                            <div>
+                                <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{z.name}</div>
+                                <div className="text-[9px] font-mono text-zinc-400">{z.id}</div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
         </div>
 
-         <div className="text-center">
-             <p className="font-mono text-[10px] text-zinc-400 max-w-[200px] mx-auto">
-                Admin clearance required for advanced network configuration.
-             </p>
-         </div>
+        {/* Status Card */}
+        <div className="bg-white dark:bg-zinc-900/80 backdrop-blur p-4 rounded-[30px] border border-zinc-100 dark:border-zinc-800 space-y-4 opacity-90 shadow-sm">
+             <div className="flex items-center justify-between">
+                 <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">BACKEND</span>
+                 <span className="text-xs font-bold text-lime-600 dark:text-lime-500">Firebase RTDB</span>
+             </div>
+             <div className="flex items-center justify-between">
+                 <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500">SYNC STATUS</span>
+                 <span className="text-xs font-bold text-zinc-900 dark:text-zinc-300">Live Socket</span>
+             </div>
+        </div>
       </div>
     </div>
   );
@@ -291,6 +416,7 @@ const App: React.FC = () => {
   return (
     <div className={`${isDarkMode ? 'dark' : ''} h-full`}>
         <div className="fixed inset-0 w-full h-[100dvh] bg-[#F2F4F7] dark:bg-zinc-950 flex flex-col overflow-hidden font-sans selection:bg-lime-500/30 transition-colors duration-500">
+        
         {hudTarget && (
             <HudOverlay target={hudTarget} onClose={() => setHudTarget(null)} />
         )}
@@ -311,7 +437,6 @@ const App: React.FC = () => {
 
                     <div className="space-y-4 mb-6">
                         <div>
-                            {/* FIELD 1: Beacon ID Input */}
                             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Beacon ID / Name</label>
                             <input 
                                 type="text"
@@ -323,7 +448,6 @@ const App: React.FC = () => {
                         </div>
 
                         <div>
-                            {/* FIELD 2: Zone Select (Restored) */}
                             <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Deployment Zone</label>
                             <div className="relative">
                                 <select 
@@ -331,7 +455,7 @@ const App: React.FC = () => {
                                     value={newBeaconZone}
                                     onChange={(e) => setNewBeaconZone(e.target.value)}
                                 >
-                                    {ZONES.map(z => <option key={z.id} value={z.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">{z.name}</option>)}
+                                    {zones.map(z => <option key={z.id} value={z.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">{z.name}</option>)}
                                 </select>
                                 <ChevronRight className="w-4 h-4 text-zinc-500 absolute right-3 top-3 pointer-events-none rotate-90" />
                             </div>
@@ -347,10 +471,72 @@ const App: React.FC = () => {
 
                     <div className="flex gap-3">
                         <Button variant="ghost" className="flex-1" onClick={handleCloseModal}>Cancel</Button>
-                        <Button variant="primary" className="flex-1" onClick={handleAddBeacon}>Deploy</Button>
+                        <Button variant="primary" className="flex-1" onClick={handleStartBeaconPlacement}>Deploy</Button>
                     </div>
                 </div>
             </ModalBackdrop>
+        )}
+
+        {/* Modal: Add Zone */}
+        {showZoneModal && (
+            <ModalBackdrop onClose={handleCloseModal}>
+                <div className="bg-white dark:bg-zinc-900 w-full max-w-xs rounded-[30px] p-6 border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 rounded-full bg-lime-500/10 flex items-center justify-center text-lime-600 dark:text-lime-500">
+                            <MapPin className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Add Zone</h3>
+                            <p className="text-xs text-zinc-500">Create new geofence</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Zone ID (Optional)</label>
+                            <input 
+                                type="text"
+                                className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[20px] px-3 py-2.5 text-sm text-zinc-900 dark:text-white outline-none focus:border-lime-500 transition-colors placeholder:text-zinc-500 font-mono"
+                                placeholder="e.g. ZONE-E"
+                                value={newZoneId}
+                                onChange={(e) => setNewZoneId(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5 block">Zone Name</label>
+                            <input 
+                                type="text"
+                                className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[20px] px-3 py-2.5 text-sm text-zinc-900 dark:text-white outline-none focus:border-lime-500 transition-colors placeholder:text-zinc-500"
+                                placeholder="e.g. Arrival Hall B"
+                                value={newZoneName}
+                                onChange={(e) => setNewZoneName(e.target.value)}
+                            />
+                        </div>
+                        <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-xs text-zinc-500">
+                            Next step: You will need to tap the map to set the center point of this zone.
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <Button variant="ghost" className="flex-1" onClick={handleCloseModal}>Cancel</Button>
+                        <Button variant="primary" className="flex-1" onClick={handleStartZonePlacement}>Next</Button>
+                    </div>
+                </div>
+            </ModalBackdrop>
+        )}
+
+        {/* PLACEMENT MODE BANNER */}
+        {placementMode && (
+             <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[2000] bg-lime-500 text-black px-6 py-3 rounded-full shadow-2xl animate-slide-up flex items-center gap-3 border-2 border-white/20">
+                 <Crosshair className="w-5 h-5 animate-spin-slow" />
+                 <span className="font-bold text-sm tracking-wide uppercase">
+                     {placementMode === 'BEACON' 
+                        ? `Tap map to place ${pendingBeaconData?.id}`
+                        : `Tap map to set center for ${pendingZoneData?.name}`
+                     }
+                 </span>
+                 <button onClick={() => { setPlacementMode(null); setPendingBeaconData(null); setPendingZoneData(null); }} className="bg-black/20 rounded-full p-1 hover:bg-black/40 ml-2"><XIcon /></button>
+             </div>
         )}
 
         {/* Header */}
@@ -383,10 +569,12 @@ const App: React.FC = () => {
             <div className={`absolute inset-0 transition-opacity duration-500 ${activeTab === 'MAP' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
             <MapComponent 
                 trolleys={trolleys} 
-                zones={ZONES}
+                zones={zones}
                 selectedTrolleyId={selectedTrolleyId}
                 onTrolleySelect={(id) => setSelectedTrolleyId(id === selectedTrolleyId ? null : id)}
-                theme="dark" // FORCE MAP TO ALWAYS BE DARK
+                theme="dark"
+                placementMode={placementMode}
+                onMapClick={handleMapClick}
             />
             
             {/* Map Selected Card */}
@@ -407,9 +595,14 @@ const App: React.FC = () => {
                             </div>
                         </div>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedTrolleyId(null)} className="h-8 w-8 p-0 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                            <XIcon />
-                        </Button>
+                        <div className="flex gap-2">
+                             <Button variant="ghost" size="sm" onClick={() => handleDeleteBeacon(selectedTrolleyId!)} className="h-8 w-8 p-0 rounded-full text-rose-500 hover:bg-rose-500/10">
+                                <AlertTriangle className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedTrolleyId(null)} className="h-8 w-8 p-0 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                                <XIcon />
+                            </Button>
+                        </div>
                     </div>
                     <Button 
                         className="w-full font-bold uppercase tracking-widest text-sm py-3.5" 
@@ -430,7 +623,6 @@ const App: React.FC = () => {
         </main>
 
         {/* Floating Dock Navigation */}
-        {/* INCREASED Z-INDEX TO 1500 TO PREVENT MAP ZOOMING FROM HIDING IT */}
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1500]">
           <nav className="bg-[#1C1C1E] p-2 rounded-full shadow-2xl flex items-center gap-2 border border-white/5 ring-1 ring-black/20">
             <NavBtn 
