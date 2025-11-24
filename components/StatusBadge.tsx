@@ -3,11 +3,12 @@ import { TrolleyStatus } from '../types';
 
 export const StatusBadge: React.FC<{ status: TrolleyStatus }> = ({ status }) => {
   const styles = {
-    [TrolleyStatus.ACTIVE]: "bg-lime-500/10 text-lime-400 border-lime-500/30 shadow-[0_0_10px_rgba(132,204,22,0.1)]",
-    [TrolleyStatus.IDLE]: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
-    [TrolleyStatus.MAINTENANCE]: "bg-rose-500/10 text-rose-400 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.1)] animate-pulse",
-    [TrolleyStatus.LOW_BATTERY]: "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]",
-    [TrolleyStatus.LOST]: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+    // Light: Solid high contrast or soft pastel. Dark: Neon glow.
+    [TrolleyStatus.ACTIVE]: "bg-readex-green text-readex-black border-transparent dark:bg-lime-500/10 dark:text-lime-400 dark:border-lime-500/30 dark:shadow-[0_0_10px_rgba(132,204,22,0.1)]",
+    [TrolleyStatus.IDLE]: "bg-gray-200 text-gray-600 border-transparent dark:bg-zinc-500/10 dark:text-zinc-400 dark:border-zinc-500/30",
+    [TrolleyStatus.MAINTENANCE]: "bg-red-100 text-red-700 border-transparent dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30 dark:shadow-[0_0_10px_rgba(244,63,94,0.1)] dark:animate-pulse",
+    [TrolleyStatus.LOW_BATTERY]: "bg-amber-100 text-amber-700 border-transparent dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30 dark:shadow-[0_0_10px_rgba(245,158,11,0.1)]",
+    [TrolleyStatus.LOST]: "bg-purple-100 text-purple-700 border-transparent dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30",
   };
 
   return (
