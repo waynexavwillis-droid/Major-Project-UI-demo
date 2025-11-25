@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin } from 'lucide-react';
+import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin, List } from 'lucide-react';
 
 import { APP_NAME } from './constants';
 import { Trolley, TabView, TrolleyStatus, Zone, ZoneType } from './types';
@@ -24,15 +24,13 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabView>('DASHBOARD');
   const [selectedTrolleyId, setSelectedTrolleyId] = useState<string | null>(null);
   const [trolleys, setTrolleys] = useState<Trolley[]>([]);
-  // Initialize as empty to rely solely on Firebase data
   const [zones, setZones] = useState<Zone[]>([]);
   const [hudTarget, setHudTarget] = useState<Trolley | null>(null);
   
-  // Dashboard Filters
-  const [dashboardZoneFilter, setDashboardZoneFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Filters (Shared for Map List)
+  const [listZoneFilter, setListZoneFilter] = useState<string>('ALL');
 
-  // Map Search State
+  // Unified Search State (Controls both Map Search Bar and List Filter)
   const [mapSearchQuery, setMapSearchQuery] = useState<string>('');
   
   // Add Beacon Logic
@@ -103,7 +101,7 @@ const App: React.FC = () => {
     const handleZonesUpdate = (snapshot: any) => {
         const data = snapshot.val();
         if (!data) {
-            setZones([]); // Clear zones if data is empty
+            setZones([]); 
             return;
         }
 
@@ -144,15 +142,12 @@ const App: React.FC = () => {
   };
 
   const handleStartBeaconPlacement = () => {
-    // 1. Prepare Data
     const autoId = `TR-${Math.floor(Math.random() * 9000) + 1000}`;
     const finalId = newBeaconId.trim() || autoId;
     
-    // 2. Set Pending State
     setPendingBeaconData({ id: finalId, zoneId: newBeaconZone });
     setPlacementMode('BEACON');
 
-    // 3. Close Modal & Switch to Map
     setShowAddModal(false);
     setActiveTab('MAP');
     setNewBeaconId('');
@@ -163,7 +158,6 @@ const App: React.FC = () => {
           alert("Please enter a zone name");
           return;
       }
-      // Generate ID if not provided, else use provided ID
       const autoId = `Z-${Math.floor(Date.now() / 1000).toString(16).toUpperCase()}`;
       const finalId = newZoneId.trim() || autoId;
 
@@ -179,7 +173,6 @@ const App: React.FC = () => {
     if (!db) return;
 
     if (placementMode === 'BEACON' && pendingBeaconData) {
-        // Write Beacon to Firebase
         db.ref(`/Tracking/${pendingBeaconData.id}`).set({
             zoneId: pendingBeaconData.zoneId,
             latitude: lat,
@@ -198,8 +191,6 @@ const App: React.FC = () => {
         setPendingBeaconData(null);
 
     } else if (placementMode === 'ZONE' && pendingZoneData) {
-        // Write Zone to Firebase
-        // Using strict .child() to handle custom IDs with spaces/special chars
         db.ref('/Zones').child(pendingZoneData.id).set({
             name: pendingZoneData.name,
             centerLat: lat,
@@ -230,27 +221,20 @@ const App: React.FC = () => {
         return;
       }
 
-      // Optimistic UI update so it disappears immediately from the list
       setZones(prev => prev.filter(z => z.id !== id));
 
-      // 1) Delete the zone from /Zones (using update to set to null is robust)
       db.ref('Zones').update({ [id]: null })
         .then(() => {
           console.log(`Zone ${id} successfully deleted.`);
-          
-          // 2) Clean up any trolleys/beacons that still reference this zone
-          // We need to query tracking data to find matches
           return db.ref('/Tracking').orderByChild('zoneId').equalTo(id).once('value');
         })
         .then((snapshot: any) => {
           const updates: Record<string, any> = {};
           
           snapshot.forEach((childSnap: any) => {
-             // For each trolley in this zone, set zoneId to null (or "Unknown")
              updates[`/Tracking/${childSnap.key}/zoneId`] = null; 
           });
 
-          // Only send update if there is something to change
           if (Object.keys(updates).length > 0) {
             return db.ref().update(updates);
           }
@@ -259,7 +243,6 @@ const App: React.FC = () => {
         .catch((error: any) => {
           console.error("Delete failed:", error);
           alert(`Failed to delete zone: ${error.message}`);
-          // If critical, could revert optimistic update here by re-fetching
         });
   };
 
@@ -271,120 +254,49 @@ const App: React.FC = () => {
       setNewZoneId('');
   };
 
-  // --- Derived State for Dashboard ---
-  const dashboardList = useMemo(() => {
+  // --- Derived State for Lists ---
+  const filteredTrolleys = useMemo(() => {
     return trolleys.filter(t => {
-      const matchZone = dashboardZoneFilter === 'ALL' || t.zoneId === dashboardZoneFilter;
-      const query = searchQuery.toLowerCase();
+      const matchZone = listZoneFilter === 'ALL' || t.zoneId === listZoneFilter;
+      const query = mapSearchQuery.toLowerCase();
       const matchSearch = t.id.toLowerCase().includes(query) || t.name.toLowerCase().includes(query);
       return matchZone && matchSearch;
     });
-  }, [trolleys, dashboardZoneFilter, searchQuery]);
-
-  // --- Derived State for Map Search ---
-  const mapSearchResults = useMemo(() => {
-      if (!mapSearchQuery.trim()) return [];
-      const q = mapSearchQuery.toLowerCase();
-      // Filter trolleys by ID or Name
-      return trolleys.filter(t => t.id.toLowerCase().includes(q) || t.name.toLowerCase().includes(q)).slice(0, 5);
-  }, [trolleys, mapSearchQuery]);
-
+  }, [trolleys, listZoneFilter, mapSearchQuery]);
 
   // --- Render Functions ---
 
   const renderDashboard = () => (
-    <div className="relative h-full p-4 pb-36 animate-fade-in flex flex-col gap-6">
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 gap-3 relative z-10 shrink-0">
-        <div className="bg-readex-white dark:bg-zinc-900/80 p-4 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-sm dark:shadow-lg flex flex-col justify-between group hover:-translate-y-1 transition-transform duration-300">
-          <div className="absolute top-3 right-3 opacity-20 group-hover:opacity-50 transition-opacity text-black dark:text-white"><Box className="w-4 h-4" /></div>
-          <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-2">Total Beacon</div>
-          <div className="text-3xl font-bold text-readex-black dark:text-white font-mono tracking-tighter">{trolleys.length}</div>
-        </div>
-        <div className="bg-readex-white dark:bg-zinc-900/80 p-4 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-sm dark:shadow-lg flex flex-col justify-between group hover:-translate-y-1 transition-transform duration-300">
-          <div className="absolute top-3 right-3 text-readex-green dark:text-lime-500 opacity-80 group-hover:opacity-100 transition-opacity"><Activity className="w-4 h-4" /></div>
-          <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-2">Active</div>
-          <div className="text-3xl font-bold text-readex-black dark:text-lime-400 font-mono tracking-tighter text-shadow-glow">
-            {trolleys.filter(t => t.status === TrolleyStatus.ACTIVE).length}
+    <div className="relative h-full p-6 pb-36 animate-fade-in flex flex-col items-center justify-center gap-6">
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-black text-readex-black dark:text-white uppercase tracking-tighter">System Status</h2>
+        <p className="text-xs text-gray-500 dark:text-zinc-500 font-mono mt-1">Real-time Operations Overview</p>
+      </div>
+
+      <div className="w-full max-w-sm grid grid-cols-1 gap-4">
+        {/* Total Card */}
+        <div className="bg-readex-white dark:bg-zinc-900/80 p-6 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-xl flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300">
+          <div>
+              <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-1">Total Assets</div>
+              <div className="text-5xl font-bold text-readex-black dark:text-white font-mono tracking-tighter">{trolleys.length}</div>
           </div>
-        </div>
-      </div>
-
-      {/* Search & Filters */}
-      <div className="flex flex-col gap-4 shrink-0 relative z-10">
-        <div className="relative">
-            <Search className="absolute left-4 top-3.5 w-4 h-4 text-gray-400 dark:text-zinc-400" />
-            <input 
-                type="text" 
-                placeholder="Search Beacon ID or Name..." 
-                className="w-full bg-readex-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-700 rounded-[24px] pl-10 pr-4 py-3 text-sm text-readex-black dark:text-white outline-none focus:border-readex-green dark:focus:border-lime-500 shadow-sm transition-all placeholder:text-gray-400 dark:placeholder:text-zinc-400"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-4 top-3.5 text-gray-400 hover:text-black dark:text-zinc-400 dark:hover:text-white">
-                    <XCircle className="w-4 h-4" />
-                </button>
-            )}
-        </div>
-      </div>
-
-      {/* List */}
-      <div className="flex-1 flex flex-col min-h-0 relative z-10">
-        <div className="flex items-center justify-between px-1 mb-4 shrink-0">
-          <h3 className="text-sm font-bold text-readex-black dark:text-zinc-100 uppercase tracking-widest flex items-center gap-2">
-             <Filter className="w-4 h-4 text-readex-black dark:text-lime-500" />
-             List Overview
-          </h3>
-          <div className="relative group">
-             <select 
-              className="appearance-none bg-readex-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-700 text-readex-black dark:text-white text-xs font-mono py-2.5 pl-4 pr-10 rounded-[24px] focus:border-readex-green dark:focus:border-lime-500 outline-none uppercase shadow-sm dark:shadow-lg transition-all cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800"
-              value={dashboardZoneFilter}
-              onChange={(e) => setDashboardZoneFilter(e.target.value)}
-             >
-               <option value="ALL" className="dark:bg-zinc-900">All Zones</option>
-               {zones.map(z => <option key={z.id} value={z.id} className="dark:bg-zinc-900">{z.name}</option>)}
-             </select>
-             <ChevronRight className="w-3 h-3 text-gray-500 dark:text-zinc-500 absolute right-3 top-3.5 pointer-events-none rotate-90 group-hover:text-black dark:group-hover:text-white transition-colors" />
+          <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400 dark:text-zinc-500 group-hover:text-readex-black dark:group-hover:text-white transition-colors">
+              <Box className="w-7 h-7" />
           </div>
         </div>
 
-        <div className="flex-1 bg-readex-white dark:bg-zinc-900/40 border border-gray-200 dark:border-zinc-800/50 rounded-[30px] overflow-hidden shadow-sm dark:shadow-xl flex flex-col">
-            <div className="bg-white dark:bg-zinc-900/80 px-5 py-4 border-b border-gray-100 dark:border-zinc-800/50 flex justify-between items-center shrink-0">
-                <span className="text-xs font-mono text-readex-black dark:text-lime-400 font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-3 h-3 text-readex-green dark:text-lime-500" />
-                  {dashboardList.length} UNITS FOUND
-                </span>
-                <div className="flex items-center gap-2">
-                     <span className="text-[9px] text-gray-500 dark:text-zinc-500 font-mono border border-gray-100 dark:border-zinc-800 px-2 py-0.5 rounded bg-gray-50 dark:bg-black/20 animate-pulse">LIVE DB</span>
-                </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto no-scrollbar">
-                <div className="divide-y divide-gray-100 dark:divide-zinc-800/50">
-                    {dashboardList.length === 0 ? (
-                        <div className="p-12 text-center text-gray-400 dark:text-zinc-500 flex flex-col items-center gap-3">
-                            <Search className="w-8 h-8 opacity-20" />
-                            <div className="text-xs font-mono">No assets found matching criteria.</div>
-                        </div>
-                    ) : (
-                        dashboardList.map(t => (
-                        <div key={t.id} className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 transition-all duration-200 group border-l-2 border-transparent hover:border-readex-green dark:hover:border-lime-500 cursor-pointer" onClick={() => handleLocate(t)}>
-                            <div className="flex items-center gap-4">
-                            <div className={`w-2.5 h-2.5 rounded-sm rotate-45 shadow-sm transition-colors duration-300 ${t.status === 'ACTIVE' ? 'bg-readex-green dark:bg-lime-500 dark:shadow-lime-500/50' : 'bg-gray-300 dark:bg-zinc-600'}`} />
-                            <div>
-                                <div className="text-sm font-bold text-readex-black dark:text-zinc-200 dark:group-hover:text-white font-mono tracking-tight">{t.id}</div>
-                                <div className="text-[10px] text-gray-400 dark:text-zinc-500 font-medium uppercase tracking-wider mt-0.5 group-hover:text-gray-600 dark:group-hover:text-zinc-400">{t.name}</div>
-                            </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <StatusBadge status={t.status} />
-                            </div>
-                        </div>
-                        ))
-                    )}
-                </div>
-            </div>
+        {/* Active Card */}
+        <div className="bg-readex-white dark:bg-zinc-900/80 p-6 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-xl flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-readex-green/10 dark:bg-lime-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+          <div>
+              <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-1">Active Units</div>
+              <div className="text-5xl font-bold text-readex-green dark:text-lime-400 font-mono tracking-tighter text-shadow-glow">
+                {trolleys.filter(t => t.status === TrolleyStatus.ACTIVE).length}
+              </div>
+          </div>
+          <div className="w-14 h-14 rounded-full bg-readex-green/20 dark:bg-lime-500/20 flex items-center justify-center text-readex-green dark:text-lime-500 animate-pulse">
+              <Activity className="w-7 h-7" />
+          </div>
         </div>
       </div>
     </div>
@@ -481,7 +393,7 @@ const App: React.FC = () => {
             <HudOverlay target={hudTarget} onClose={() => setHudTarget(null)} />
         )}
 
-        {/* Modal: Add Beacon */}
+        {/* Modals for Adding Beacon/Zone */}
         {showAddModal && (
             <ModalBackdrop onClose={handleCloseModal}>
                 <div className="bg-readex-white dark:bg-zinc-900 w-full max-w-xs rounded-[30px] p-6 border border-gray-200 dark:border-zinc-800 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -506,7 +418,6 @@ const App: React.FC = () => {
                                 onChange={(e) => setNewBeaconId(e.target.value)}
                             />
                         </div>
-
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-500 mb-1.5 block">Deployment Zone</label>
                             <div className="relative">
@@ -520,13 +431,6 @@ const App: React.FC = () => {
                                 <ChevronRight className="w-4 h-4 text-gray-500 dark:text-zinc-500 absolute right-3 top-3 pointer-events-none rotate-90" />
                             </div>
                         </div>
-
-                        <div>
-                             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-500 mb-1.5 block">Firmware</label>
-                             <div className="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-[20px] px-3 py-2.5 text-sm text-gray-400 dark:text-zinc-400 font-mono">
-                                v2.5.0-stable
-                             </div>
-                        </div>
                     </div>
 
                     <div className="flex gap-3">
@@ -537,7 +441,6 @@ const App: React.FC = () => {
             </ModalBackdrop>
         )}
 
-        {/* Modal: Add Zone */}
         {showZoneModal && (
             <ModalBackdrop onClose={handleCloseModal}>
                 <div className="bg-readex-white dark:bg-zinc-900 w-full max-w-xs rounded-[30px] p-6 border border-gray-200 dark:border-zinc-800 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -571,9 +474,6 @@ const App: React.FC = () => {
                                 value={newZoneName}
                                 onChange={(e) => setNewZoneName(e.target.value)}
                             />
-                        </div>
-                        <div className="p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl text-xs text-gray-500 dark:text-zinc-500">
-                            Next step: You will need to tap the map to set the center point of this zone.
                         </div>
                     </div>
 
@@ -627,8 +527,9 @@ const App: React.FC = () => {
             {activeTab === 'DASHBOARD' && renderDashboard()}
             
             <div className={`absolute inset-0 transition-opacity duration-500 ${activeTab === 'MAP' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-                {/* SEARCH BAR OVERLAY FOR MAP */}
-                <div className="absolute top-4 left-4 right-4 z-[1000] max-w-md mx-auto">
+                
+                {/* SEARCH BAR OVERLAY (Top Center) */}
+                <div className="absolute top-4 left-4 right-4 md:right-auto md:w-96 z-[1000]">
                     <div className="relative">
                         <div className="absolute left-4 top-3.5 text-gray-400 dark:text-zinc-400">
                             <Search className="w-4 h-4" />
@@ -646,28 +547,66 @@ const App: React.FC = () => {
                             </button>
                         )}
                     </div>
-                    
-                    {/* Results Dropdown */}
-                    {mapSearchResults.length > 0 && (
-                        <div className="mt-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-zinc-700/50 shadow-xl overflow-hidden animate-slide-up">
-                            {mapSearchResults.map(t => (
-                                <div 
-                                    key={t.id}
-                                    className="px-4 py-3 border-b border-gray-100 dark:border-zinc-800/50 last:border-0 hover:bg-readex-green/20 dark:hover:bg-lime-500/10 cursor-pointer flex items-center justify-between group"
-                                    onClick={() => {
-                                        handleLocate(t);
-                                        setMapSearchQuery('');
-                                    }}
+                </div>
+
+                {/* LIST OVERVIEW (Right Side Panel) */}
+                <div className="hidden md:flex absolute top-4 right-4 bottom-32 w-80 z-[900] flex-col pointer-events-none">
+                    <div className="pointer-events-auto flex-1 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-[30px] shadow-2xl border border-gray-200 dark:border-zinc-800/50 flex flex-col overflow-hidden">
+                        
+                        {/* Panel Header */}
+                        <div className="p-4 border-b border-gray-100 dark:border-zinc-800/50 bg-white/50 dark:bg-zinc-900/50 flex justify-between items-center">
+                            <h3 className="text-xs font-bold text-readex-black dark:text-zinc-100 uppercase tracking-widest flex items-center gap-2">
+                                <List className="w-4 h-4" />
+                                Overview
+                            </h3>
+                            <div className="relative group">
+                                <select 
+                                    className="appearance-none bg-transparent text-xs font-mono font-bold text-gray-500 dark:text-zinc-400 py-1 pr-6 pl-2 outline-none cursor-pointer hover:text-black dark:hover:text-white transition-colors"
+                                    value={listZoneFilter}
+                                    onChange={(e) => setListZoneFilter(e.target.value)}
                                 >
-                                    <div>
-                                        <div className="text-sm font-bold text-readex-black dark:text-white font-mono">{t.id}</div>
-                                        <div className="text-[10px] text-gray-500 dark:text-zinc-500 uppercase tracking-wider">{t.name}</div>
-                                    </div>
-                                     <ChevronRight className="w-4 h-4 text-gray-400 dark:text-zinc-400 group-hover:text-readex-black dark:group-hover:text-lime-500" />
-                                </div>
-                            ))}
+                                    <option value="ALL" className="dark:bg-zinc-900">ALL ZONES</option>
+                                    {zones.map(z => <option key={z.id} value={z.id} className="dark:bg-zinc-900">{z.name.toUpperCase()}</option>)}
+                                </select>
+                                <ChevronRight className="w-3 h-3 text-gray-400 dark:text-zinc-500 absolute right-1 top-1.5 pointer-events-none rotate-90" />
+                            </div>
                         </div>
-                    )}
+
+                        {/* Stats Strip */}
+                        <div className="px-4 py-2 bg-gray-50/50 dark:bg-zinc-950/30 flex justify-between text-[9px] font-mono text-gray-400 dark:text-zinc-500 uppercase tracking-wider">
+                            <span>{filteredTrolleys.length} Matches</span>
+                            <span>Live</span>
+                        </div>
+
+                        {/* List Content */}
+                        <div className="flex-1 overflow-y-auto no-scrollbar">
+                             {filteredTrolleys.length === 0 ? (
+                                <div className="p-8 text-center text-gray-400 dark:text-zinc-500 flex flex-col items-center gap-3 opacity-50">
+                                    <Search className="w-6 h-6" />
+                                    <div className="text-[10px] font-mono">No units found</div>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-100 dark:divide-zinc-800/50">
+                                    {filteredTrolleys.map(t => (
+                                        <div 
+                                            key={t.id} 
+                                            onClick={() => handleLocate(t)}
+                                            className="p-3 hover:bg-readex-green/10 dark:hover:bg-white/5 transition-colors cursor-pointer group flex items-center justify-between"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-1.5 h-1.5 rounded-full ${t.status === 'ACTIVE' ? 'bg-readex-green dark:bg-lime-500' : 'bg-gray-300 dark:bg-zinc-600'}`} />
+                                                <div>
+                                                    <div className="text-xs font-bold text-readex-black dark:text-zinc-200 group-hover:text-readex-green dark:group-hover:text-lime-400 font-mono transition-colors">{t.id}</div>
+                                                    <div className="text-[9px] text-gray-400 dark:text-zinc-500 uppercase">{t.zoneId || 'Unassigned'}</div>
+                                                </div>
+                                            </div>
+                                            <StatusBadge status={t.status} />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 <MapComponent 
@@ -675,14 +614,14 @@ const App: React.FC = () => {
                     zones={zones}
                     selectedTrolleyId={selectedTrolleyId}
                     onTrolleySelect={(id) => setSelectedTrolleyId(id === selectedTrolleyId ? null : id)}
-                    theme="dark"
+                    theme="dark" // Map always dark
                     placementMode={placementMode}
                     onMapClick={handleMapClick}
                 />
                 
-                {/* Map Selected Card */}
+                {/* Map Selected Card (Bottom) */}
                 {selectedTrolleyId && activeTab === 'MAP' && (
-                    <div className="absolute bottom-32 left-4 right-4 z-[1000]">
+                    <div className="absolute bottom-32 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-96 z-[1000]">
                         <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 p-5 rounded-[30px] shadow-[0_20px_60px_-10px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] animate-slide-up ring-1 ring-black/5 dark:ring-white/5">
                         <div className="flex justify-between items-start mb-5">
                             <div className="flex items-start gap-3">
