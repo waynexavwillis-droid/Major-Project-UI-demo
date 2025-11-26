@@ -1,0 +1,8 @@
+{
+  "name": "TrolleyOps Pro",
+  "description": "Industrial-grade fleet management and asset tracking system for retail logistics.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ]
+}
