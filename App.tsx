@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin, List } from 'lucide-react';
+import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin, List, ArrowUp, Zap } from 'lucide-react';
 
 import { APP_NAME } from './constants';
 import { Trolley, TabView, TrolleyStatus, Zone, ZoneType } from './types';
@@ -27,6 +27,9 @@ const App: React.FC = () => {
   const [zones, setZones] = useState<Zone[]>([]);
   const [hudTarget, setHudTarget] = useState<Trolley | null>(null);
   
+  // Dashboard Filter State
+  const [dashboardCategory, setDashboardCategory] = useState<string>('ALL');
+
   // Filters (Shared for Map List)
   const [listZoneFilter, setListZoneFilter] = useState<string>('ALL');
 
@@ -266,41 +269,147 @@ const App: React.FC = () => {
 
   // --- Render Functions ---
 
-  const renderDashboard = () => (
-    <div className="relative h-full p-6 pb-36 animate-fade-in flex flex-col items-center justify-center gap-6">
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-black text-readex-black dark:text-white uppercase tracking-tighter">System Status</h2>
-        <p className="text-xs text-gray-500 dark:text-zinc-500 font-mono mt-1">Real-time Operations Overview</p>
-      </div>
+  const renderDashboard = () => {
+    const dashboardTrolleys = trolleys.filter(t => 
+        dashboardCategory === 'ALL' || t.zoneId === dashboardCategory
+    );
 
-      <div className="w-full max-w-sm grid grid-cols-1 gap-4">
-        {/* Total Card */}
-        <div className="bg-readex-white dark:bg-zinc-900/80 p-6 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-xl flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300">
-          <div>
-              <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-1">Total Assets</div>
-              <div className="text-5xl font-bold text-readex-black dark:text-white font-mono tracking-tighter">{trolleys.length}</div>
-          </div>
-          <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center text-gray-400 dark:text-zinc-500 group-hover:text-readex-black dark:group-hover:text-white transition-colors">
-              <Box className="w-7 h-7" />
-          </div>
-        </div>
+    const getGradient = (index: number) => {
+        const gradients = [
+            'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500', 
+            'bg-gradient-to-br from-orange-400 via-pink-500 to-rose-500',
+            'bg-gradient-to-br from-blue-500 via-indigo-500 to-violet-500',
+            'bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500'
+        ];
+        return gradients[index % gradients.length];
+    };
 
-        {/* Active Card */}
-        <div className="bg-readex-white dark:bg-zinc-900/80 p-6 rounded-[30px] border border-gray-200 dark:border-zinc-800 shadow-xl flex items-center justify-between group hover:scale-[1.02] transition-transform duration-300 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-readex-green/10 dark:bg-lime-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-          <div>
-              <div className="text-gray-500 dark:text-zinc-500 text-[10px] font-mono uppercase tracking-widest mb-1">Active Units</div>
-              <div className="text-5xl font-bold text-readex-green dark:text-lime-400 font-mono tracking-tighter text-shadow-glow">
-                {trolleys.filter(t => t.status === TrolleyStatus.ACTIVE).length}
-              </div>
-          </div>
-          <div className="w-14 h-14 rounded-full bg-readex-green/20 dark:bg-lime-500/20 flex items-center justify-center text-readex-green dark:text-lime-500 animate-pulse">
-              <Activity className="w-7 h-7" />
-          </div>
+    return (
+        <div className="h-full flex flex-col pb-36 animate-fade-in overflow-hidden bg-gray-50 dark:bg-zinc-950">
+            {/* Header Area */}
+            <div className="flex-none pt-6 px-6 pb-2">
+                 <h2 className="text-2xl font-black text-readex-black dark:text-white mb-4 tracking-tighter uppercase">Operations</h2>
+                 
+                 {/* Yellow Hero Card - Total Beacons */}
+                 <div className="w-full bg-[#E2F700] rounded-[32px] p-6 mb-8 relative overflow-hidden shadow-lg group transition-transform active:scale-95 duration-200">
+                    <div className="relative z-10 flex justify-between items-start">
+                        <div className="flex flex-col">
+                            <span className="text-xs font-bold text-black uppercase tracking-widest mb-1 opacity-70">Fleet Status</span>
+                            <span className="text-6xl font-black text-black tracking-tighter leading-none">{trolleys.length}</span>
+                            <span className="text-sm font-bold text-black mt-2">Active Beacons Online</span>
+                        </div>
+                        <div className="bg-black/10 p-3 rounded-full">
+                            <Activity className="w-6 h-6 text-black" />
+                        </div>
+                    </div>
+                    {/* Decorative waves */}
+                    <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/20 blur-3xl rounded-full"></div>
+                 </div>
+
+                 {/* Zone Filters - Pill Style */}
+                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 mask-linear-fade">
+                    {/* ALL Button */}
+                    <button 
+                        onClick={() => setDashboardCategory('ALL')}
+                        className={`flex items-center gap-2 px-5 py-3 rounded-full border transition-all duration-300 whitespace-nowrap ${
+                            dashboardCategory === 'ALL' 
+                            ? 'bg-[#E2F700] border-[#E2F700] text-black shadow-[0_0_20px_rgba(226,247,0,0.3)]' 
+                            : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-700'
+                        }`}
+                    >
+                        <span className="text-sm font-bold">All Zones</span>
+                    </button>
+
+                    {/* Zone Buttons */}
+                    {zones.map((z) => {
+                        const count = trolleys.filter(t => t.zoneId === z.id).length;
+                        const isActive = dashboardCategory === z.id;
+                        return (
+                            <button 
+                                key={z.id}
+                                onClick={() => setDashboardCategory(z.id)}
+                                className={`flex items-center gap-2 px-5 py-3 rounded-full border transition-all duration-300 whitespace-nowrap group ${
+                                    isActive 
+                                    ? 'bg-[#E2F700] border-[#E2F700] text-black shadow-[0_0_20px_rgba(226,247,0,0.3)]' 
+                                    : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-700'
+                                }`}
+                            >
+                                <span className="text-sm font-bold">{z.name}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    isActive 
+                                    ? 'bg-black/10 text-black' 
+                                    : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 group-hover:bg-gray-200 dark:group-hover:bg-zinc-700'
+                                }`}>
+                                    {count}
+                                </span>
+                            </button>
+                        );
+                    })}
+                 </div>
+            </div>
+
+            {/* List Header */}
+            <div className="flex-none px-6 py-2 flex justify-between items-center mt-2">
+                <h3 className="text-lg font-bold text-readex-black dark:text-white tracking-tight">Active Results</h3>
+            </div>
+
+            {/* Cards List Scroll */}
+            <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 no-scrollbar pb-32">
+                {dashboardTrolleys.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 text-gray-400 dark:text-zinc-600">
+                        <Activity className="w-12 h-12 mb-2 opacity-50" />
+                        <p className="text-sm font-medium">No beacons in this zone</p>
+                    </div>
+                ) : (
+                    dashboardTrolleys.map((t, index) => (
+                        <div 
+                            key={t.id}
+                            onClick={() => handleLocate(t)}
+                            className={`w-full ${getGradient(index)} rounded-[32px] p-6 relative overflow-hidden shadow-xl group cursor-pointer transition-transform duration-300 hover:scale-[1.02]`}
+                        >
+                            {/* Abstract Background Shapes */}
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+                            
+                            <div className="flex justify-between items-start relative z-10">
+                                <div>
+                                    <h4 className="text-2xl font-bold text-white tracking-tight mb-1">{t.name}</h4>
+                                    <p className="text-white/70 text-sm font-medium mb-5">{t.zoneId ? zones.find(z => z.id === t.zoneId)?.name : 'Unassigned Zone'}</p>
+                                    
+                                    <div className="flex gap-2">
+                                        <div className="bg-white/20 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1.5 text-xs text-white font-medium border border-white/10">
+                                            <Battery className="w-3.5 h-3.5" />
+                                            {t.batteryLevel}%
+                                        </div>
+                                        <div className="bg-white/20 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1.5 text-xs text-white font-medium border border-white/10">
+                                            <Signal className="w-3.5 h-3.5" />
+                                            {t.signalStrength}
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 text-3xl font-bold text-white flex items-end gap-1">
+                                        <span className="text-sm opacity-80 mb-1 font-medium bg-black/20 px-2 py-0.5 rounded">ID</span>
+                                        <span className="tracking-tighter">{t.id.replace('TR-', '')}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col items-end gap-4">
+                                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transform -rotate-45 group-hover:rotate-0 transition-transform duration-300 text-black">
+                                        <ArrowUp className="w-5 h-5 stroke-[3px]" />
+                                    </div>
+                                    
+                                    {/* 3D-like Icon representation */}
+                                    <div className="mt-2 opacity-90 drop-shadow-2xl filter transform group-hover:scale-110 transition-transform duration-500">
+                                        <Box className="w-28 h-28 text-white/90 stroke-1" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderSettings = () => (
     <div className="relative p-6 flex flex-col items-center h-full space-y-8 animate-fade-in overflow-y-auto pb-36">
