@@ -1,1 +1,315 @@
-[]
+[
+    {
+        "id": "1fe0900c2c4e1691",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "firebase_cfg",
+        "type": "firebase-config",
+        "name": "Firebase RTDB (fill me)",
+        "authType": "privateKey",
+        "claims": {},
+        "createUser": false,
+        "status": {
+            "firestore": false,
+            "storage": false
+        },
+        "useClaims": false
+    },
+    {
+        "id": "mqtt_broker_hivemq",
+        "type": "mqtt-broker",
+        "name": "HiveMQ Public",
+        "broker": "broker.hivemq.com",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "cd792dd89a5c18ee",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "function 2",
+        "func": "msg.payload = { status: \"ok\", time: new Date().toISOString() };\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 260,
+        "wires": [
+            [
+                "cdac513625d738a8"
+            ]
+        ]
+    },
+    {
+        "id": "b298c5e95a0718b9",
+        "type": "http in",
+        "z": "1fe0900c2c4e1691",
+        "name": "",
+        "url": "/api/ping",
+        "method": "get",
+        "upload": false,
+        "skipBodyParsing": false,
+        "swaggerDoc": "",
+        "x": 190,
+        "y": 180,
+        "wires": [
+            [
+                "cd792dd89a5c18ee"
+            ]
+        ]
+    },
+    {
+        "id": "cdac513625d738a8",
+        "type": "http response",
+        "z": "1fe0900c2c4e1691",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 730,
+        "y": 320,
+        "wires": []
+    },
+    {
+        "id": "16fcd16907037633",
+        "type": "firebase-in",
+        "z": "1fe0900c2c4e1691",
+        "name": "Major Project Database(Read)",
+        "constraints": {},
+        "database": "firebase_cfg",
+        "inputs": 1,
+        "listenerType": "value",
+        "outputType": "auto",
+        "passThrough": false,
+        "path": "Tracking",
+        "pathType": "msg",
+        "useConstraints": false,
+        "x": 600,
+        "y": 180,
+        "wires": [
+            [
+                "f3cb4e208839595a"
+            ]
+        ]
+    },
+    {
+        "id": "f3cb4e208839595a",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "FormatForUI",
+        "func": "// msg.payload is the whole \"Tracking\" object from Firebase\n// { \"T-TEST-001\": {...}, \"T-TEST-002\": {...}, ... }\n\nconst tracking = msg.payload || {};\nconst updates = [];\n\nfor (const [trolleyId, p] of Object.entries(tracking)) {\n    updates.push({\n        trolleyId,\n        zoneId: p.zoneId || \"\",\n        latitude: p.latitude,\n        longitude: p.longitude,\n        rssi: p.rssi,\n        timestamp: p.timestamp\n    });\n}\n\n// Send as a single message to uibuilder\nmsg.topic = \"beacon/bulkUpdate\";\nmsg.payload = updates;\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 850,
+        "y": 200,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "850a593c659b423d",
+        "type": "inject",
+        "z": "1fe0900c2c4e1691",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 370,
+        "y": 80,
+        "wires": [
+            [
+                "16fcd16907037633"
+            ]
+        ]
+    },
+    {
+        "id": "e5fc2c9d63a5267f",
+        "type": "mqtt in",
+        "z": "1fe0900c2c4e1691",
+        "name": "All zones (HiveMQ)",
+        "topic": "airport/zones/+",
+        "qos": "1",
+        "datatype": "auto",
+        "broker": "mqtt_broker_hivemq",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 190,
+        "y": 440,
+        "wires": [
+            [
+                "26cc32fc883bfa59"
+            ]
+        ]
+    },
+    {
+        "id": "26cc32fc883bfa59",
+        "type": "json",
+        "z": "1fe0900c2c4e1691",
+        "name": "to object/array",
+        "property": "payload",
+        "action": "",
+        "pretty": false,
+        "x": 410,
+        "y": 440,
+        "wires": [
+            [
+                "81cd6d1fdd5f331e"
+            ]
+        ]
+    },
+    {
+        "id": "81cd6d1fdd5f331e",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "Emit one msg per item",
+        "func": "// If gateway publishes an array, emit one message per item; otherwise pass through.\nconst p = msg.payload;\nif (Array.isArray(p)) {\n  for (const item of p) {\n    node.send({ ...msg, payload: item });\n  }\n  return null;\n}\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 660,
+        "y": 440,
+        "wires": [
+            [
+                "3d0512dd68ae8417"
+            ]
+        ]
+    },
+    {
+        "id": "3d0512dd68ae8417",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "Normalize record",
+        "func": "// Ensure payload is an object\nif (typeof msg.payload === 'string') {\n  try {\n    msg.payload = JSON.parse(msg.payload);\n  } catch (e) {\n    node.warn('Failed to JSON.parse payload string');\n  }\n}\nconst p = msg.payload || {};\n\n// Extract IDs (change these if your gateway uses other field names)\nconst trolleyId = p.trolleyId || p.id || p.trolley || 'UNKNOWN_TROLLEY';\nconst zoneId = p.zoneId || (msg.topic && msg.topic.split('/')[2]) || 'UNKNOWN_ZONE';\n\nmsg.payload = {\n  trolleyId: String(trolleyId),\n  zoneId: String(zoneId),\n  latitude: (p.latitude !== undefined ? Number(p.latitude) : null),\n  longitude: (p.longitude !== undefined ? Number(p.longitude) : null),\n  rssi: (p.rssi !== undefined ? Number(p.rssi) : null),\n  timestamp: p.timestamp || new Date().toISOString()\n};\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 440,
+        "wires": [
+            [
+                "f22b04696f1d8592"
+            ]
+        ]
+    },
+    {
+        "id": "f22b04696f1d8592",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "Buffer per trolley (for 5s)",
+        "func": "// Buffer messages in FLOW context for the next 5-second flush\nlet buffer = flow.get('trackingBuffer') || {};\nconst rec = msg.payload || {};\nconst tId = rec.trolleyId;\n\nif (!tId) {\n  node.warn('Missing trolleyId, message ignored');\n  return null;\n}\n\nif (!buffer[tId]) {\n  buffer[tId] = {\n    zones: {},\n    last: { latitude: null, longitude: null, rssi: null, timestamp: rec.timestamp }\n  };\n}\n\n// Mark zone seen in this window\nif (rec.zoneId) {\n  buffer[tId].zones[rec.zoneId] = true;\n}\n\n// Keep latest metrics\nbuffer[tId].last = {\n  latitude: rec.latitude ?? buffer[tId].last.latitude,\n  longitude: rec.longitude ?? buffer[tId].last.longitude,\n  rssi: rec.rssi ?? buffer[tId].last.rssi,\n  timestamp: rec.timestamp || buffer[tId].last.timestamp\n};\n\nflow.set('trackingBuffer', buffer);\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1190,
+        "y": 440,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "6f647ddc35e43fd3",
+        "type": "inject",
+        "z": "1fe0900c2c4e1691",
+        "name": "Tick (every 5s)",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "5",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 220,
+        "y": 540,
+        "wires": [
+            [
+                "36c7bdf05ea01295"
+            ]
+        ]
+    },
+    {
+        "id": "36c7bdf05ea01295",
+        "type": "function",
+        "z": "1fe0900c2c4e1691",
+        "name": "Flush buffer → /Tracking/<trolleyId>",
+        "func": "// Every 5s, send one record per trolleyId and clear the FLOW buffer\nlet buffer = flow.get('trackingBuffer') || {};\nconst out = [];\n\nfor (const trolleyId of Object.keys(buffer)) {\n  const entry = buffer[trolleyId];\n  const last = entry.last || {};\n\n  // Unique zones this window\n  const zonesArr = Object.keys(entry.zones || {});\n\n  const payload = {\n    zoneId: zonesArr,              // [\"T1-ZONE-A\",\"T1-ZONE-B\"]\n    trolleyId: trolleyId,\n    longitude: last.longitude ?? null,\n    latitude: last.latitude ?? null,\n    timestamp: new Date().toISOString(),\n    rssi: last.rssi ?? null\n  };\n\n  out.push({\n    topic: `Tracking/${trolleyId}`, // 🔥 writes to /Tracking/<trolleyId>\n    method: 'set',\n    payload\n  });\n}\n\n// Clear buffer for next 5s window\nflow.set('trackingBuffer', {});\n\nif (out.length) {\n  node.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `flushed ${out.length} rec(s)`\n  });\n  return [out];\n}\n\nnode.status({});\nreturn null;\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 540,
+        "wires": [
+            [
+                "9961a0d3770ad48d"
+            ]
+        ]
+    },
+    {
+        "id": "9961a0d3770ad48d",
+        "type": "firebase-out",
+        "z": "1fe0900c2c4e1691",
+        "name": "Write to /Tracking/<trolleyId>",
+        "database": "firebase_cfg",
+        "path": "topic",
+        "pathType": "msg",
+        "priority": "1",
+        "queryType": "set",
+        "x": 860,
+        "y": 540,
+        "wires": []
+    }
+]
