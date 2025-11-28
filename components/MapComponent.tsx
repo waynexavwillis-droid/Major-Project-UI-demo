@@ -84,23 +84,13 @@ export const MapComponent: React.FC<MapProps> = ({
 
   // Handle Theme Changes (Tile Layer)
   useEffect(() => {
-  if (!mapInstance.current) return;
+    if (!mapInstance.current) return;
+    
+    if (tileLayerRef.current) {
+        tileLayerRef.current.remove();
+        tileLayerRef.current = null;
+    }
 
-  if (tileLayerRef.current) {
-    tileLayerRef.current.remove();
-    tileLayerRef.current = null;
-  }
-
-  // Standard OpenStreetMap tiles
-  const osmTiles = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-  tileLayerRef.current = L.tileLayer(osmTiles, {
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-  }).addTo(mapInstance.current);
-}, [theme]);
-  
     const darkTiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
     const lightTiles = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
     const url = theme === 'dark' ? darkTiles : lightTiles;
