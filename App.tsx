@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Filter, Activity, AlertTriangle, CheckCircle2, Moon, Sun, Signal, Battery, XCircle, Crosshair, Trash2, MapPin, List, ArrowUp, Zap } from 'lucide-react';
+import { LayoutGrid, Map as MapIcon, Box, Settings, Search, Plus, ChevronRight, Activity, AlertTriangle, Moon, Sun, Signal, Battery, XCircle, Crosshair, List, ArrowUp } from 'lucide-react';
 
 import { APP_NAME } from './constants';
 import { Trolley, TabView, TrolleyStatus, Zone, ZoneType } from './types';
@@ -40,16 +40,10 @@ const App: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newBeaconId, setNewBeaconId] = useState<string>('');
   const [newBeaconZone, setNewBeaconZone] = useState<string>('ZONE-A');
-  
-  // Add Zone Logic
-  const [showZoneModal, setShowZoneModal] = useState(false);
-  const [newZoneId, setNewZoneId] = useState<string>('');
-  const [newZoneName, setNewZoneName] = useState<string>('');
 
   // Placement State
-  const [placementMode, setPlacementMode] = useState<'BEACON' | 'ZONE' | null>(null);
+  const [placementMode, setPlacementMode] = useState<'BEACON' | null>(null);
   const [pendingBeaconData, setPendingBeaconData] = useState<{id: string, zoneId: string} | null>(null);
-  const [pendingZoneData, setPendingZoneData] = useState<{id: string, name: string} | null>(null);
 
   // --- Firebase Listeners ---
   useEffect(() => {
@@ -156,22 +150,6 @@ const App: React.FC = () => {
     setNewBeaconId('');
   };
 
-  const handleStartZonePlacement = () => {
-      if (!newZoneName.trim()) {
-          alert("Please enter a zone name");
-          return;
-      }
-      const autoId = `Z-${Math.floor(Date.now() / 1000).toString(16).toUpperCase()}`;
-      const finalId = newZoneId.trim() || autoId;
-
-      setPendingZoneData({ id: finalId, name: newZoneName });
-      setPlacementMode('ZONE');
-      setShowZoneModal(false);
-      setActiveTab('MAP');
-      setNewZoneName('');
-      setNewZoneId('');
-  };
-
   const handleMapClick = (lat: number, lng: number) => {
     if (!db) return;
 
@@ -192,21 +170,6 @@ const App: React.FC = () => {
 
         setPlacementMode(null);
         setPendingBeaconData(null);
-
-    } else if (placementMode === 'ZONE' && pendingZoneData) {
-        db.ref('/Zones').child(pendingZoneData.id).set({
-            name: pendingZoneData.name,
-            centerLat: lat,
-            centerLng: lng
-        }).then(() => {
-            console.log("Zone created successfully");
-        }).catch(err => {
-            console.error("Firebase Write Error: ", err);
-            alert("Failed to create zone.");
-        });
-
-        setPlacementMode(null);
-        setPendingZoneData(null);
     }
   };
 
@@ -216,45 +179,9 @@ const App: React.FC = () => {
       if (selectedTrolleyId === id) setSelectedTrolleyId(null);
   };
   
-  const handleDeleteZone = (id: string) => {
-      if (!window.confirm(`Are you sure you want to delete Zone "${id}"?`)) return;
-
-      if (!db) {
-        alert("Database connection not ready.");
-        return;
-      }
-
-      setZones(prev => prev.filter(z => z.id !== id));
-
-      db.ref('Zones').update({ [id]: null })
-        .then(() => {
-          console.log(`Zone ${id} successfully deleted.`);
-          return db.ref('/Tracking').orderByChild('zoneId').equalTo(id).once('value');
-        })
-        .then((snapshot: any) => {
-          const updates: Record<string, any> = {};
-          
-          snapshot.forEach((childSnap: any) => {
-             updates[`/Tracking/${childSnap.key}/zoneId`] = null; 
-          });
-
-          if (Object.keys(updates).length > 0) {
-            return db.ref().update(updates);
-          }
-          return null;
-        })
-        .catch((error: any) => {
-          console.error("Delete failed:", error);
-          alert(`Failed to delete zone: ${error.message}`);
-        });
-  };
-
   const handleCloseModal = () => {
       setShowAddModal(false);
-      setShowZoneModal(false);
       setNewBeaconId('');
-      setNewZoneName('');
-      setNewZoneId('');
   };
 
   // --- Derived State for Lists ---
@@ -443,42 +370,6 @@ const App: React.FC = () => {
             </button>
         </div>
 
-        {/* Zone Management Card */}
-        <div className="bg-readex-white dark:bg-zinc-900/80 backdrop-blur rounded-[30px] border border-gray-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center">
-                 <div className="flex items-center gap-3">
-                    <MapPin className="w-5 h-5 text-gray-400 dark:text-zinc-400" />
-                    <span className="text-sm font-bold text-readex-black dark:text-white">Zone Management</span>
-                 </div>
-                 <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full bg-gray-100 dark:bg-zinc-800 hover:bg-readex-green dark:hover:bg-lime-500 hover:text-black" onClick={() => setShowZoneModal(true)}>
-                    <Plus className="w-4 h-4" />
-                 </Button>
-            </div>
-            <div className="max-h-60 overflow-y-auto no-scrollbar">
-                {zones.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-gray-400 dark:text-zinc-400">No zones configured.</div>
-                ) : (
-                    zones.map(z => (
-                        <div key={z.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/5 group border-b border-gray-100 dark:border-zinc-800/50 last:border-0 relative">
-                            <div>
-                                <div className="text-sm font-bold text-gray-700 dark:text-zinc-300">{z.name}</div>
-                                <div className="text-[9px] font-mono text-gray-400 dark:text-zinc-400">{z.id}</div>
-                            </div>
-                            <Button 
-                                type="button"
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => handleDeleteZone(z.id)}
-                                className="h-8 w-8 p-0 rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 dark:hover:bg-rose-500/20 dark:text-zinc-400 dark:hover:text-rose-500"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </Button>
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
-
         {/* Status Card */}
         <div className="bg-readex-white dark:bg-zinc-900/80 backdrop-blur p-4 rounded-[30px] border border-gray-200 dark:border-zinc-800 space-y-4 opacity-90 shadow-sm">
              <div className="flex items-center justify-between">
@@ -502,7 +393,7 @@ const App: React.FC = () => {
             <HudOverlay target={hudTarget} onClose={() => setHudTarget(null)} />
         )}
 
-        {/* Modals for Adding Beacon/Zone */}
+        {/* Modals for Adding Beacon */}
         {showAddModal && (
             <ModalBackdrop onClose={handleCloseModal}>
                 <div className="bg-readex-white dark:bg-zinc-900 w-full max-w-xs rounded-[30px] p-6 border border-gray-200 dark:border-zinc-800 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -550,50 +441,6 @@ const App: React.FC = () => {
             </ModalBackdrop>
         )}
 
-        {showZoneModal && (
-            <ModalBackdrop onClose={handleCloseModal}>
-                <div className="bg-readex-white dark:bg-zinc-900 w-full max-w-xs rounded-[30px] p-6 border border-gray-200 dark:border-zinc-800 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 rounded-full bg-readex-green/20 dark:bg-lime-500/10 flex items-center justify-center text-readex-black dark:text-lime-500">
-                            <MapPin className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-bold text-readex-black dark:text-white">Add Zone</h3>
-                            <p className="text-xs text-gray-500 dark:text-zinc-500">Create new geofence</p>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4 mb-6">
-                        <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-500 mb-1.5 block">Zone ID (Optional)</label>
-                            <input 
-                                type="text"
-                                className="w-full bg-readex-input dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-[20px] px-3 py-2.5 text-sm text-readex-black dark:text-white outline-none focus:border-readex-green dark:focus:border-lime-500 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500 font-mono"
-                                placeholder="e.g. ZONE-E"
-                                value={newZoneId}
-                                onChange={(e) => setNewZoneId(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-zinc-500 mb-1.5 block">Zone Name</label>
-                            <input 
-                                type="text"
-                                className="w-full bg-readex-input dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-[20px] px-3 py-2.5 text-sm text-readex-black dark:text-white outline-none focus:border-readex-green dark:focus:border-lime-500 transition-colors placeholder:text-gray-400 dark:placeholder:text-zinc-500"
-                                placeholder="e.g. Arrival Hall B"
-                                value={newZoneName}
-                                onChange={(e) => setNewZoneName(e.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <Button variant="ghost" className="flex-1" onClick={handleCloseModal}>Cancel</Button>
-                        <Button variant="primary" className="flex-1" onClick={handleStartZonePlacement}>Next</Button>
-                    </div>
-                </div>
-            </ModalBackdrop>
-        )}
-
         {/* PLACEMENT MODE BANNER */}
         {placementMode && (
              <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[2000] bg-readex-green dark:bg-lime-500 text-black px-6 py-3 rounded-full shadow-2xl animate-slide-up flex items-center gap-3 border-2 border-white/20">
@@ -601,10 +448,10 @@ const App: React.FC = () => {
                  <span className="font-bold text-sm tracking-wide uppercase">
                      {placementMode === 'BEACON' 
                         ? `Tap map to place ${pendingBeaconData?.id}`
-                        : `Tap map to set center for ${pendingZoneData?.name}`
+                        : ''
                      }
                  </span>
-                 <button onClick={() => { setPlacementMode(null); setPendingBeaconData(null); setPendingZoneData(null); }} className="bg-black/20 rounded-full p-1 hover:bg-black/40 ml-2"><XIcon /></button>
+                 <button onClick={() => { setPlacementMode(null); setPendingBeaconData(null); }} className="bg-black/20 rounded-full p-1 hover:bg-black/40 ml-2"><XIcon /></button>
              </div>
         )}
 
